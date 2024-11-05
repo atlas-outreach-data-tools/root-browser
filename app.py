@@ -1,7 +1,8 @@
 import streamlit as st
+from streamlit_tree_select import tree_select
 import uproot
 import matplotlib.pyplot as plt
-import pandas as pd
+import numpy as np
 import os
 
 # Specify the predetermined folder
@@ -25,28 +26,21 @@ uploaded_file = st.sidebar.file_uploader("Or upload a ROOT file", type=["root"])
 file_path = None
 if selected_file != "Select a file":
     file_path = os.path.join(root_folder, selected_file)
-    print(file_path)
 elif uploaded_file:
     file_path = uploaded_file
 
-def build_tree(directory, path=""):
-    """
-    Recursively builds a nested tree structure using Streamlit's expandable elements.
-    Each TTree or branch can be expanded to reveal its sub-branches or leaf nodes.
-    """
+# Function to build the tree nodes
+def build_tree_nodes(directory, path=""):
+    nodes = []
     for key, obj in directory.items():
-        print(key)
-        full_path = f"{path}{key}"
+        full_path = f"{path}/{key}"
         if isinstance(obj, uproot.behaviors.TTree.TTree):
-            with st.expander(f"📂 {key}", expanded=False):
-                branches = obj.keys()
-                for branch in branches:
-                    branch_path = f"{full_path}/{branch}"
-                    if st.button(f"📈 {branch}", key=branch_path):
-                        plot_branch_histogram(obj, branch)
+            branches = [{"label": branch, "value": f"{full_path}/{branch}", "selectable": True} for branch in obj.keys()]
+            nodes.append({"label": key, "value": full_path, "children": branches, "selectable": False})
         elif isinstance(obj, uproot.reading.ReadOnlyDirectory):
-            with st.expander(f"📁 {key}", expanded=False):
-                build_tree(obj, path=f"{full_path}/")
+            children = build_tree_nodes(obj, path=full_path)
+            nodes.append({"label": key, "value": full_path, "children": children, "selectable": False})
+    return nodes
 
 # Function to plot histogram of a selected branch
 def plot_branch_histogram(tree, branch):
@@ -54,6 +48,11 @@ def plot_branch_histogram(tree, branch):
     Plots the histogram of a selected branch from the ROOT TTree.
     """
     data = tree[branch].array(library="np")
+    
+    # Ensure data is numerical
+    if data.dtype == np.bool_:
+        data = data.astype(np.int_)
+
     fig, ax = plt.subplots()
     ax.hist(data, bins=30, alpha=0.7, color="skyblue")
     ax.set_title(f"Histogram of {branch}")
@@ -64,8 +63,16 @@ def plot_branch_histogram(tree, branch):
 if file_path:
     # Load the ROOT file using uproot
     file = uproot.open(file_path)
-    st.write("### ROOT File Structure")
-    # Recursively display the file structure
-    build_tree(file)
+    
+    # Build and display the tree structure
+    nodes = build_tree_nodes(file)
+    selected_nodes = tree_select(nodes, key="tree_select")
+
+    if selected_nodes:
+        for node in selected_nodes['checked']:
+            parts = node.split("/")
+            if len(parts) > 2:
+                tree = file[parts[1]]
+                plot_branch_histogram(tree, parts[2])
 else:
-    st.write("Upload a ROOT file to start exploring.")
+    st.sidebar.write("Upload a ROOT file to start exploring.")
