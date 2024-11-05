@@ -75,4 +75,4 @@ if file_path:
                 tree = file[parts[1]]
                 plot_branch_histogram(tree, parts[2])
 else:
-    st.sidebar.write("Upload a ROOT file to start exploring.")
+    st.write("Upload a ROOT file to start exploring.")
