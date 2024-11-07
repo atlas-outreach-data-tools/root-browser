@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ROOT File Explorer</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #282c34;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .file-explorer {
+            display: flex;
+            width: 100%;
+        }
+
+        .side-panel {
+            background: #3a3f47;
+            padding: 20px;
+            width: 320px;
+            overflow-y: auto;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.3);
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .side-panel:hover {
+            width: 340px;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.3);
+        }
+
+        input[type="file"],
+        button,
+        select {
+            display: block;
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+            box-sizing: border-box;
+            border: none;
+            background: #61dafb;
+            color: #000;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="file"]:hover,
+        button:hover,
+        select:hover {
+            background: #4fa1c9;
+            transform: scale(1.05);
+        }
+
+        #fileUploadLabel {
+            margin-bottom: 10px;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            cursor: pointer;
+            margin: 5px 0;
+            transition: color 0.3s;
+        }
+
+        li:hover {
+            color: #61dafb;
+        }
+
+        li::before {
+            content: '\25B6';
+            color: #61dafb;
+            margin-right: 5px;
+            transition: transform 0.3s;
+            display: none;
+        }
+
+        li.open::before {
+            transform: rotate(90deg);
+        }
+
+        li.has-children::before {
+            display: inline-block;
+        }
+
+        li ul {
+            display: none;
+            margin-left: 20px;
+        }
+
+        li.open > ul {
+            display: block;
+        }
+
+        #plot {
+            flex: 1;
+            background: #ffffff;
+            color: #000;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            overflow-y: auto;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #plot.show {
+            opacity: 1;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #61dafb;
+            width: 20px;
+            height: 20px;
+            animation: spin 2s linear infinite;
+            display: none;
+            margin: 0 auto;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="file-explorer">
+        <div class="side-panel">
+            <label for="fileUpload" id="fileUploadLabel">Upload a new file:</label>
+            <input type="file" id="fileUpload">
+            <button id="uploadButton">Upload</button>
+            <label for="existingFiles">Pick existing file:</label>
+            <select id="existingFiles">
+                <!-- Options will be populated by JavaScript -->
+            </select>
+            <button id="loadExistingFileButton">Load Existing File</button>
+            <div class="loader" id="loader"></div>
+            <ul id="tree"></ul>
+        </div>
+        <div class="main-content">
+            <div id="plot"></div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            function fetchUploadedFiles() {
+                $.getJSON('/uploaded_files', function (files) {
+                    var select = $('#existingFiles');
+                    select.empty();
+                    files.forEach(function (file) {
+                        select.append(new Option(file, file));
+                    });
+                });
+            }
+
+            fetchUploadedFiles();
+
+            $('#uploadButton').click(function () {
+                var file = $('#fileUpload')[0].files[0];
+                var formData = new FormData();
+                formData.append('file', file);
+
+                $('#loader').show();
+
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function (data) {
+                        exploreFile(data.filename);
+                        fetchUploadedFiles();
+                    },
+                    complete: function () {
+                        $('#loader').hide();
+                    }
+                });
+            });
+
+            $('#loadExistingFileButton').click(function () {
+                var fileName = $('#existingFiles').val();
+                if (fileName) {
+                    $('#loader').show();
+                    exploreFile(fileName);
+                }
+            });
+
+            function exploreFile(filename) {
+                $.getJSON(`/explore/${filename}`, function (data) {
+                    $('#tree').empty();
+                    buildTree($('#tree'), data, filename);
+                    $('#loader').hide();
+                });
+            }
+
+            function buildTree(parent, data, filename) {
+                $.each(data, function (key, value) {
+                    var li = $('<li>').text(key).appendTo(parent);
+                    if (value.type === 'directory' || value.type === 'tree') {
+                        li.addClass('has-children');
+                        li.on('click', function (event) {
+                            event.stopPropagation();
+                            if (!$(this).hasClass('open')) {
+                                $(this).addClass('open').children('ul').slideDown(300);
+                            } else {
+                                $(this).removeClass('open').children('ul').slideUp(300);
+                            }
+                        });
+
+                        var ul = $('<ul>').appendTo(li);
+                        if (value.type === 'directory') {
+                            buildTree(ul, value.content, filename);
+                        } else if (value.type === 'tree') {
+                            $.each(value.branches, function (_, branch) {
+                                var branchLi = $('<li>').text(branch).appendTo(ul);
+                                branchLi.click(function (event) {
+                                    event.stopPropagation();
+                                    plotBranch(filename, key, branch);
+                                });
+                            });
+                        }
+                    } else {
+                        li.click(function (event) {
+                            event.stopPropagation();
+                        });
+                    }
+                });
+            }
+
+            function plotBranch(filename, tree, branch) {
+                $.get(`/plot/${filename}/${tree}/${branch}`, function (data) {
+                    $('#plot').html(`<img src="/plot/${filename}/${tree}/${branch}" />`).addClass('show');
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>
