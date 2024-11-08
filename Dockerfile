@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+USER root
+
 WORKDIR /app
 
 # Copy content of the git repo in the image
