@@ -1,171 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <title>ROOT File Explorer</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
-        body {
-            font-family: 'Roboto', sans-serif;
-            background-color: #282c34;
-            color: #ffffff;
+        /* Basic reset */
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+    
+        /* Global Styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
-
+    
         .file-explorer {
             display: flex;
             width: 100%;
         }
-
+    
+        /* Side Panel */
         .side-panel {
-            background: #3a3f47;
+            background: #1c1c1c;
+            color: #b0b0b0;
             padding: 20px;
             width: 320px;
             overflow-y: auto;
-            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.3);
-            transition: width 0.3s ease;
+            transition: width 0.3s;
             position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
-
+    
         .side-panel:hover {
             width: 340px;
         }
-
-        .main-content {
-            flex: 1;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.3);
+    
+        .side-panel label,
+        .side-panel button,
+        .side-panel select {
+            color: #c0c0c0;
+        }
+    
+        /* Hide the actual file input */
+        .side-panel input[type="file"] {
+            opacity: 0;
+            position: absolute;
+            z-index: -1;
         }
 
-        input[type="file"],
-        button,
-        select {
-            display: block;
-            margin: 10px 0;
-            padding: 10px;
+        /* Custom button to replace the file input */
+        .custom-file-upload {
             width: 100%;
-            box-sizing: border-box;
-            border: none;
-            background: #61dafb;
-            color: #000;
-            border-radius: 5px;
+            padding: 10px;
+            background-color: #333;
+            color: #d0d0d0;
+            border-radius: 4px;
+            text-align: center;
             cursor: pointer;
-            transition: background 0.3s, transform 0.3s;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            transition: background 0.3s ease;
         }
 
-        input[type="file"]:hover,
-        button:hover,
-        select:hover {
-            background: #4fa1c9;
-            transform: scale(1.05);
+        .custom-file-upload:hover {
+            background-color: #444;
         }
 
-        #fileUploadLabel {
-            margin-bottom: 10px;
+        .side-panel button,
+        .side-panel select {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background-color: #333;
+            color: #d0d0d0;
+            border-radius: 4px;
+            transition: background 0.3s ease;
+            cursor: pointer;
         }
 
+        .side-panel button:hover,
+        .side-panel select:hover {
+            background-color: #444;
+        }
+
+        .side-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .side-panel::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        .side-panel::-webkit-scrollbar-thumb {
+            background-color: #555;
+            border-radius: 10px;
+            border: 2px solid #1c1c1c;
+        }
+
+        .side-panel::-webkit-scrollbar-thumb:hover {
+            background-color: #666;
+        }
+
+        /* File Tree */
         ul {
             list-style: none;
-            padding: 0;
         }
-
-        li {
+    
+        ul li {
+            margin: 8px 0;
             cursor: pointer;
-            margin: 5px 0;
-            transition: color 0.3s;
+            color: #b0b0b0;
+            transition: color 0.3s ease;
         }
-
-        li:hover {
-            color: #61dafb;
+    
+        ul li:hover {
+            color: #d0d0d0;
         }
-
-        li::before {
-            content: '\25B6';
-            color: #61dafb;
-            margin-right: 5px;
-            transition: transform 0.3s;
-            display: none;
+    
+        ul li::before {
+            content: '📁';
+            margin-right: 6px;
+            color: #757575;
         }
-
-        li.open::before {
-            transform: rotate(90deg);
+    
+        ul li.open::before {
+            content: '📂';
         }
-
-        li.has-children::before {
-            display: inline-block;
+    
+        ul li ul li::before {
+            content: '📄';
         }
-
-        li ul {
+    
+        ul li ul {
             display: none;
             margin-left: 20px;
         }
-
-        li.open > ul {
+    
+        ul li.open > ul {
             display: block;
         }
-
+    
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background-color: #1c1c1c;
+            overflow-y: auto;
+            transition: background 0.3s ease;
+            border-left: 2px solid #333;
+        }
+    
+        /* Plot Area */
         #plot {
             flex: 1;
-            background: #ffffff;
-            color: #000;
+            background: #2a2a2a;
+            color: #d0d0d0;
+            border-radius: 8px;
             padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            overflow-y: auto;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.3s;
             opacity: 0;
-            transition: opacity 0.3s ease;
         }
-
+    
         #plot.show {
             opacity: 1;
         }
-
+    
+        /* Loader Animation */
         .loader {
-            border: 4px solid #f3f3f3;
+            border: 4px solid rgba(255, 255, 255, 0.1);
             border-radius: 50%;
-            border-top: 4px solid #61dafb;
-            width: 20px;
-            height: 20px;
-            animation: spin 2s linear infinite;
+            border-top: 4px solid #888;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
             display: none;
-            margin: 0 auto;
             position: absolute;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
         }
-
+    
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-    </style>
+    
+        /* Responsive */
+        @media (max-width: 768px) {
+            .side-panel {
+                width: 100%;
+                height: auto;
+                overflow: visible;
+                flex-direction: row;
+                flex-wrap: wrap;
+                padding: 10px;
+                gap: 5px;
+            }
+            
+            .main-content {
+                padding: 10px;
+            }
+        }
+    </style>    
 </head>
 
 <body>
     <div class="file-explorer">
         <div class="side-panel">
-            <label for="fileUpload" id="fileUploadLabel">Upload a new file:</label>
+            <!-- Custom-styled file input -->
+            <label for="fileUpload" class="custom-file-upload">Upload a new file</label>
             <input type="file" id="fileUpload">
             <button id="uploadButton">Upload</button>
+
             <label for="existingFiles">Pick existing file:</label>
             <select id="existingFiles">
-                <!-- Options will be populated by JavaScript -->
+                <!-- Options populated dynamically -->
             </select>
-            <button id="loadExistingFileButton">Load Existing File</button>
+            <button id="loadExistingFileButton">Load File</button>
+
             <div class="loader" id="loader"></div>
             <ul id="tree"></ul>
         </div>
+        
         <div class="main-content">
             <div id="plot"></div>
         </div>
@@ -266,5 +335,4 @@
         });
     </script>
 </body>
-
 </html>
