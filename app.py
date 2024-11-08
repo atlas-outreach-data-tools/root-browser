@@ -1,71 +1,84 @@
-import streamlit as st
+from flask import Flask, request, render_template, send_file, jsonify
 import uproot
-import matplotlib.pyplot as plt
-import pandas as pd
 import os
+import matplotlib.pyplot as plt
+import io
+from werkzeug.utils import secure_filename
 
-# Specify the predetermined folder
-root_folder = "./uploaded_files/"
+app = Flask(__name__)
 
-# Ensure the folder exists
-if not os.path.exists(root_folder):
-    os.makedirs(root_folder)
+# Upload configuration
+UPLOAD_FOLDER = './uploaded_files'
+ALLOWED_EXTENSIONS = {'root'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Sidebar for file selection or upload
-st.sidebar.title("ROOT File Browser")
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# List ROOT files in the predetermined folder
-local_files = [f for f in os.listdir(root_folder) if f.endswith(".root")]
-selected_file = st.sidebar.selectbox("Select a ROOT file", ["Select a file"] + local_files)
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Upload new file if needed
-uploaded_file = st.sidebar.file_uploader("Or upload a ROOT file", type=["root"])
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'file' not in request.files:
+        return 'No file part', 400
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file', 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        return jsonify({'filename': filename})
+    return 'File upload failed', 400
 
-# Determine which file to load: either from the folder or an uploaded file
-file_path = None
-if selected_file != "Select a file":
-    file_path = os.path.join(root_folder, selected_file)
-    print(file_path)
-elif uploaded_file:
-    file_path = uploaded_file
+@app.route('/uploaded_files', methods=['GET'])
+def uploaded_files():
+    files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) if allowed_file(f)]
+    return jsonify(files)
 
-def build_tree(directory, path=""):
-    """
-    Recursively builds a nested tree structure using Streamlit's expandable elements.
-    Each TTree or branch can be expanded to reveal its sub-branches or leaf nodes.
-    """
-    for key, obj in directory.items():
-        print(key)
-        full_path = f"{path}{key}"
-        if isinstance(obj, uproot.behaviors.TTree.TTree):
-            with st.expander(f"📂 {key}", expanded=False):
-                branches = obj.keys()
-                for branch in branches:
-                    branch_path = f"{full_path}/{branch}"
-                    if st.button(f"📈 {branch}", key=branch_path):
-                        plot_branch_histogram(obj, branch)
-        elif isinstance(obj, uproot.reading.ReadOnlyDirectory):
-            with st.expander(f"📁 {key}", expanded=False):
-                build_tree(obj, path=f"{full_path}/")
+@app.route('/explore/<filename>')
+def explore(filename):
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file = uproot.open(filepath)
+    tree = build_tree(file)
+    return jsonify(tree)
 
-# Function to plot histogram of a selected branch
-def plot_branch_histogram(tree, branch):
-    """
-    Plots the histogram of a selected branch from the ROOT TTree.
-    """
+@app.route('/plot/<filename>/<tree_name>/<branch>')
+def plot(filename, tree_name, branch):
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file = uproot.open(filepath)
+    tree = file[tree_name]
     data = tree[branch].array(library="np")
+
+    # Create plot
     fig, ax = plt.subplots()
     ax.hist(data, bins=30, alpha=0.7, color="skyblue")
     ax.set_title(f"Histogram of {branch}")
     ax.set_xlabel("Value")
     ax.set_ylabel("Frequency")
-    st.pyplot(fig)
 
-if file_path:
-    # Load the ROOT file using uproot
-    file = uproot.open(file_path)
-    st.write("### ROOT File Structure")
-    # Recursively display the file structure
-    build_tree(file)
-else:
-    st.write("Upload a ROOT file to start exploring.")
+    # Save to a bytes buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
+
+def build_tree(directory, path=""):
+    """
+    Recursively builds a nested tree structure.
+    """
+    tree = {}
+    for key, obj in directory.items():
+        full_path = f"{path}/{key}"
+        if isinstance(obj, uproot.behaviors.TTree.TTree):
+            tree[key] = {'type': 'tree', 'branches': list(obj.keys())}
+        elif isinstance(obj, uproot.reading.ReadOnlyDirectory):
+            tree[key] = {'type': 'directory', 'content': build_tree(obj, path=full_path)}
+    return tree
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)

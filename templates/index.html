@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ROOT File Explorer</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* Basic reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+    
+        /* Global Styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+    
+        .file-explorer {
+            display: flex;
+            width: 100%;
+        }
+    
+        /* Side Panel */
+        .side-panel {
+            background: #1c1c1c;
+            color: #b0b0b0;
+            padding: 20px;
+            width: 320px;
+            overflow-y: auto;
+            transition: width 0.3s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+    
+        .side-panel:hover {
+            width: 340px;
+        }
+    
+        .side-panel label,
+        .side-panel button,
+        .side-panel select {
+            color: #c0c0c0;
+        }
+    
+        /* Hide the actual file input */
+        .side-panel input[type="file"] {
+            opacity: 0;
+            position: absolute;
+            z-index: -1;
+        }
+
+        /* Custom button to replace the file input */
+        .custom-file-upload {
+            width: 100%;
+            padding: 10px;
+            background-color: #333;
+            color: #d0d0d0;
+            border-radius: 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .custom-file-upload:hover {
+            background-color: #444;
+        }
+
+        .side-panel button,
+        .side-panel select {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background-color: #333;
+            color: #d0d0d0;
+            border-radius: 4px;
+            transition: background 0.3s ease;
+            cursor: pointer;
+        }
+
+        .side-panel button:hover,
+        .side-panel select:hover {
+            background-color: #444;
+        }
+
+        .side-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .side-panel::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        .side-panel::-webkit-scrollbar-thumb {
+            background-color: #555;
+            border-radius: 10px;
+            border: 2px solid #1c1c1c;
+        }
+
+        .side-panel::-webkit-scrollbar-thumb:hover {
+            background-color: #666;
+        }
+
+        /* File Tree */
+        ul {
+            list-style: none;
+        }
+    
+        ul li {
+            margin: 8px 0;
+            cursor: pointer;
+            color: #b0b0b0;
+            transition: color 0.3s ease;
+        }
+    
+        ul li:hover {
+            color: #d0d0d0;
+        }
+    
+        ul li::before {
+            content: '📁';
+            margin-right: 6px;
+            color: #757575;
+        }
+    
+        ul li.open::before {
+            content: '📂';
+        }
+    
+        ul li ul li::before {
+            content: '📄';
+        }
+    
+        ul li ul {
+            display: none;
+            margin-left: 20px;
+        }
+    
+        ul li.open > ul {
+            display: block;
+        }
+    
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background-color: #1c1c1c;
+            overflow-y: auto;
+            transition: background 0.3s ease;
+            border-left: 2px solid #333;
+        }
+    
+        /* Plot Area */
+        #plot {
+            flex: 1;
+            background: #2a2a2a;
+            color: #d0d0d0;
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.3s;
+            opacity: 0;
+        }
+    
+        #plot.show {
+            opacity: 1;
+        }
+    
+        /* Loader Animation */
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #888;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+    
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    
+        /* Responsive */
+        @media (max-width: 768px) {
+            .side-panel {
+                width: 100%;
+                height: auto;
+                overflow: visible;
+                flex-direction: row;
+                flex-wrap: wrap;
+                padding: 10px;
+                gap: 5px;
+            }
+            
+            .main-content {
+                padding: 10px;
+            }
+        }
+    </style>    
+</head>
+
+<body>
+    <div class="file-explorer">
+        <div class="side-panel">
+            <!-- Custom-styled file input -->
+            <label for="fileUpload" class="custom-file-upload">Upload a new file</label>
+            <input type="file" id="fileUpload">
+            <button id="uploadButton">Upload</button>
+
+            <label for="existingFiles">Pick existing file:</label>
+            <select id="existingFiles">
+                <!-- Options populated dynamically -->
+            </select>
+            <button id="loadExistingFileButton">Load File</button>
+
+            <div class="loader" id="loader"></div>
+            <ul id="tree"></ul>
+        </div>
+        
+        <div class="main-content">
+            <div id="plot"></div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            function fetchUploadedFiles() {
+                $.getJSON('/uploaded_files', function (files) {
+                    var select = $('#existingFiles');
+                    select.empty();
+                    files.forEach(function (file) {
+                        select.append(new Option(file, file));
+                    });
+                });
+            }
+
+            fetchUploadedFiles();
+
+            $('#uploadButton').click(function () {
+                var file = $('#fileUpload')[0].files[0];
+                var formData = new FormData();
+                formData.append('file', file);
+
+                $('#loader').show();
+
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function (data) {
+                        exploreFile(data.filename);
+                        fetchUploadedFiles();
+                    },
+                    complete: function () {
+                        $('#loader').hide();
+                    }
+                });
+            });
+
+            $('#loadExistingFileButton').click(function () {
+                var fileName = $('#existingFiles').val();
+                if (fileName) {
+                    $('#loader').show();
+                    exploreFile(fileName);
+                }
+            });
+
+            function exploreFile(filename) {
+                $.getJSON(`/explore/${filename}`, function (data) {
+                    $('#tree').empty();
+                    buildTree($('#tree'), data, filename);
+                    $('#loader').hide();
+                });
+            }
+
+            function buildTree(parent, data, filename) {
+                $.each(data, function (key, value) {
+                    var li = $('<li>').text(key).appendTo(parent);
+                    if (value.type === 'directory' || value.type === 'tree') {
+                        li.addClass('has-children');
+                        li.on('click', function (event) {
+                            event.stopPropagation();
+                            if (!$(this).hasClass('open')) {
+                                $(this).addClass('open').children('ul').slideDown(300);
+                            } else {
+                                $(this).removeClass('open').children('ul').slideUp(300);
+                            }
+                        });
+
+                        var ul = $('<ul>').appendTo(li);
+                        if (value.type === 'directory') {
+                            buildTree(ul, value.content, filename);
+                        } else if (value.type === 'tree') {
+                            $.each(value.branches, function (_, branch) {
+                                var branchLi = $('<li>').text(branch).appendTo(ul);
+                                branchLi.click(function (event) {
+                                    event.stopPropagation();
+                                    plotBranch(filename, key, branch);
+                                });
+                            });
+                        }
+                    } else {
+                        li.click(function (event) {
+                            event.stopPropagation();
+                        });
+                    }
+                });
+            }
+
+            function plotBranch(filename, tree, branch) {
+                $.get(`/plot/${filename}/${tree}/${branch}`, function (data) {
+                    $('#plot').html(`<img src="/plot/${filename}/${tree}/${branch}" />`).addClass('show');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
